@@ -203,6 +203,7 @@ strong {
 }
 
 .alert-image-path code {
+  overflow-wrap: anywhere;
   color: #0f766e;
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 }

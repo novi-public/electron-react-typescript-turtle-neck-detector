@@ -1,6 +1,6 @@
 {
   "name": "turtle-neck-detector",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Electron + React + TypeScript desktop app built with Vite.",
   "main": "dist-electron/main.js",
   "type": "module",
@@ -34,6 +34,15 @@
       "dist/app/**/*",
       "dist-electron/**/*",
       "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "public/assets/alert-images",
+        "to": "alert-images",
+        "filter": [
+          "**/*"
+        ]
+      }
     ],
     "mac": {
       "target": [

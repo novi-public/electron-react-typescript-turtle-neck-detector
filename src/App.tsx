@@ -292,13 +292,14 @@ function App() {
       return;
     }
 
+    const firstImage = alertImages[0]?.path;
     const randomImage =
       alertImages.length > 0 ? alertImages[Math.floor(Math.random() * alertImages.length)]?.path : undefined;
-    const imagePath = selectedAlertImage === 'random' ? randomImage : selectedAlertImage;
+    const imagePath = selectedAlertImage === 'random' ? randomImage : selectedAlertImage || firstImage;
 
-    if (notificationMode === 'image' && !imagePath) {
-      setAlertStatusMessage('사용 가능한 알림 이미지가 없습니다.');
-      return;
+    if (notificationMode === 'image') {
+      console.log('image alert requested');
+      console.log('selected imagePath:', imagePath ?? '');
     }
 
     window.electronAPI?.triggerPostureAlert({
@@ -306,47 +307,66 @@ function App() {
       imagePath: notificationMode === 'image' ? imagePath : undefined,
     });
     setAlertStatusMessage(
-      notificationMode === 'flash' ? '전체 화면 깜빡임 알림 요청됨' : '이미지 지나감 알림 요청됨',
+      notificationMode === 'flash'
+        ? '전체 화면 깜빡임 알림 요청됨'
+        : imagePath
+          ? '이미지 지나감 알림 요청됨'
+          : '이미지 없이 placeholder 알림 요청됨',
     );
   }, [alertImages, notificationMode, selectedAlertImage]);
 
   const loadAlertImages = useCallback(() => {
     const applyImages = (images: AlertImageItem[]) => {
-        setAlertImages(images);
+      setAlertImages(images);
 
-        if (images.length === 0) {
-          setSelectedAlertImage('');
-          return;
-        }
+      if (images.length === 0) {
+        setSelectedAlertImage('');
+        return;
+      }
 
-        const storedImage = localStorage.getItem(SELECTED_ALERT_IMAGE_STORAGE_KEY);
-        const nextImage =
-          storedImage === 'random' || images.some((image) => image.path === storedImage)
-            ? storedImage!
-            : 'random';
+      const storedImage = localStorage.getItem(SELECTED_ALERT_IMAGE_STORAGE_KEY);
+      const nextImage =
+        storedImage === 'random' || images.some((image) => image.path === storedImage) ? storedImage! : 'random';
 
-        setSelectedAlertImage(nextImage);
+      setSelectedAlertImage(nextImage);
     };
 
-    fetch(`${import.meta.env.BASE_URL}assets/alert-images/manifest.json`, { cache: 'no-store' })
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error('Alert image manifest not found');
-        }
+    const loadFromManifest = () =>
+      fetch(`${import.meta.env.BASE_URL}assets/alert-images/manifest.json`, { cache: 'no-store' })
+        .then((response) => {
+          if (!response.ok) {
+            throw new Error('Alert image manifest not found');
+          }
 
-        return response.json() as Promise<AlertImageItem[]>;
-      })
+          return response.json() as Promise<AlertImageItem[]>;
+        });
+
+    if (window.electronAPI?.getAlertImages) {
+      window.electronAPI
+        .getAlertImages()
+        .then(applyImages)
+        .catch(() => {
+          loadFromManifest()
+            .then(applyImages)
+            .catch(() => {
+              setAlertImages([]);
+              setSelectedAlertImage('');
+            });
+        });
+      return;
+    }
+
+    loadFromManifest()
       .then(applyImages)
       .catch(() => {
-        window.electronAPI
-          ?.getAlertImages()
-          .then(applyImages)
-          .catch(() => {
-            setAlertImages([]);
-            setSelectedAlertImage('');
-          });
+        setAlertImages([]);
+        setSelectedAlertImage('');
       });
   }, []);
+
+  useEffect(() => {
+    setAlertPreviewFailed(false);
+  }, [selectedAlertImage]);
 
   const stopCamera = useCallback(() => {
     cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
@@ -794,6 +814,16 @@ function App() {
         <p className="alert-image-path">
           이미지 폴더: <code>public/assets/alert-images</code>
         </p>
+        {developerMode && (
+          <p className="alert-image-path">
+            선택된 이미지:{' '}
+            <code>
+              {selectedAlertImage === 'random'
+                ? 'Random'
+                : selectedAlertImage || alertImages[0]?.path || 'placeholder'}
+            </code>
+          </p>
+        )}
         {alertStatusMessage && <p className="alert-status-message">{alertStatusMessage}</p>}
       </section>
 

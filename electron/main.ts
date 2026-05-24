@@ -35,24 +35,10 @@ async function directoryExists(directoryPath: string) {
   }
 }
 
-function getAlertImageDirectories() {
-  const appPath = app.getAppPath();
-  const directoryCandidates = [
-    path.join(process.cwd(), 'public/assets/alert-images'),
-    path.join(process.cwd(), 'dist/assets/alert-images'),
-    path.join(appPath, 'public/assets/alert-images'),
-    path.join(appPath, 'dist/assets/alert-images'),
-    path.join(__dirname, '../public/assets/alert-images'),
-    path.join(__dirname, '../dist/assets/alert-images'),
-    path.join(process.resourcesPath, 'public/assets/alert-images'),
-    path.join(process.resourcesPath, 'dist/assets/alert-images'),
-  ];
-
-  return [...new Set(directoryCandidates)];
-}
-
-function getAlertImagePublicPath(fileName: string) {
-  return `assets/alert-images/${encodeURIComponent(fileName)}`;
+function getAlertImagesDir() {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'alert-images')
+    : path.join(process.cwd(), 'public', 'assets', 'alert-images');
 }
 
 function escapeHtml(value: string) {
@@ -64,97 +50,57 @@ function escapeHtml(value: string) {
     .replace(/'/g, '&#39;');
 }
 
-function resolveAlertImageFile(imagePath?: string) {
+function resolveAlertImageUrl(imagePath?: string) {
   if (!imagePath) {
-    return null;
+    return '';
   }
 
-  const decodedPath = decodeURIComponent(imagePath);
+  if (imagePath.startsWith('file://')) {
+    return imagePath;
+  }
+
+  const decodedPath = decodeURIComponent(imagePath.replace(/^assets\/alert-images\//, ''));
   const fileName = path.basename(decodedPath);
   const extension = path.extname(fileName).toLowerCase();
 
   if (!ALERT_IMAGE_EXTENSIONS.has(extension)) {
-    return null;
-  }
-
-  for (const directoryPath of getAlertImageDirectories()) {
-    const filePath = path.join(directoryPath, fileName);
-
-    if (existsSync(filePath)) {
-      return filePath;
-    }
-  }
-
-  return null;
-}
-
-function getImageMimeType(filePath: string) {
-  const extension = path.extname(filePath).toLowerCase();
-
-  if (extension === '.jpg' || extension === '.jpeg') {
-    return 'image/jpeg';
-  }
-
-  if (extension === '.webp') {
-    return 'image/webp';
-  }
-
-  if (extension === '.gif') {
-    return 'image/gif';
-  }
-
-  return 'image/png';
-}
-
-async function getAlertImageDataUrl(imagePath?: string) {
-  const imageFilePath = resolveAlertImageFile(imagePath);
-
-  if (!imageFilePath) {
     return '';
   }
 
-  try {
-    const imageBuffer = await fs.readFile(imageFilePath);
-    return `data:${getImageMimeType(imageFilePath)};base64,${imageBuffer.toString('base64')}`;
-  } catch {
-    return '';
+  const filePath = path.join(getAlertImagesDir(), fileName);
+
+  if (existsSync(filePath)) {
+    return pathToFileURL(filePath).toString();
   }
+
+  return '';
 }
 
 async function getAlertImages(): Promise<AlertImageItem[]> {
-  const directoryChecks = await Promise.all(
-    getAlertImageDirectories().map(async (candidate) => ({
-      candidate,
-      exists: await directoryExists(candidate),
-    })),
-  );
-  const existingDirectories = directoryChecks.filter(({ exists }) => exists).map(({ candidate }) => candidate);
-  const imagesByName = new Map<string, AlertImageItem>();
+  const alertImagesDir = getAlertImagesDir();
 
-  for (const directoryPath of existingDirectories) {
-    let fileNames: string[];
+  if (!(await directoryExists(alertImagesDir))) {
+    return [];
+  }
 
-    try {
-      fileNames = await fs.readdir(directoryPath);
-    } catch {
-      continue;
-    }
+  try {
+    const fileNames = await fs.readdir(alertImagesDir);
 
-    fileNames
+    return fileNames
       .filter((fileName) => ALERT_IMAGE_EXTENSIONS.has(path.extname(fileName).toLowerCase()))
       .sort((a, b) => a.localeCompare(b))
-      .forEach((fileName) => {
-        const filePath = path.join(directoryPath, fileName);
+      .map((fileName) => {
+        const filePath = path.join(alertImagesDir, fileName);
 
-        imagesByName.set(fileName, {
+        return {
           id: fileName,
           name: fileName,
           path: pathToFileURL(filePath).toString(),
-        });
+        };
       });
+  } catch {
+    return [];
   }
-
-  return [...imagesByName.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
 function raiseOverlayWindow(overlayWindow: BrowserWindow) {
@@ -184,6 +130,7 @@ async function createOverlayWindow(bounds: Electron.Rectangle, transparent = tru
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
+      webSecurity: false,
     },
   });
 
@@ -196,6 +143,9 @@ async function createOverlayWindow(bounds: Electron.Rectangle, transparent = tru
 
 function getOverlayHtml(payload: TriggerPostureAlertPayload, displayWidth: number, imageSource = '') {
   const mode = payload.mode === 'image' ? 'image' : 'flash';
+  const imageMarkup = imageSource
+    ? `<img src="${escapeHtml(imageSource)}" alt="posture alert" onload="console.log('image load success')" onerror="console.log('image load failed'); this.remove(); document.querySelector('.image-placeholder').hidden = false;" /><div class="image-placeholder" hidden>🐱</div>`
+    : `<div class="image-placeholder">🐱</div>`;
 
   return `<!doctype html>
 <html lang="ko">
@@ -228,25 +178,32 @@ function getOverlayHtml(payload: TriggerPostureAlertPayload, displayWidth: numbe
       .image-runner {
         position: fixed;
         top: 50%;
-        right: -640px;
+        right: -260px;
         display: grid;
-        width: 520px;
-        height: 520px;
+        width: 220px;
+        height: 220px;
         place-items: center;
         transform: translateY(-50%);
-        animation: image-alert 3.5s linear forwards;
+        pointer-events: none;
+        animation: moveRightToLeft 3s linear forwards;
       }
 
       .image-runner img {
-        max-width: 100%;
-        max-height: 100%;
+        max-width: 220px;
+        max-height: 220px;
         object-fit: contain;
         filter: drop-shadow(0 18px 24px rgba(15, 23, 42, 0.28));
       }
 
-      @keyframes image-alert {
+      .image-placeholder {
+        font-size: 148px;
+        line-height: 1;
+        filter: drop-shadow(0 18px 24px rgba(15, 23, 42, 0.28));
+      }
+
+      @keyframes moveRightToLeft {
         from { transform: translate(0, -50%); }
-        to { transform: translate(-${displayWidth + 640}px, -50%); }
+        to { transform: translate(-${displayWidth + 480}px, -50%); }
       }
     </style>
   </head>
@@ -254,7 +211,7 @@ function getOverlayHtml(payload: TriggerPostureAlertPayload, displayWidth: numbe
     ${
       mode === 'flash'
         ? '<div class="flash"></div>'
-        : `<div class="image-runner"><img src="${escapeHtml(imageSource)}" alt="posture alert" onerror="this.remove()" /></div>`
+        : `<div class="image-runner">${imageMarkup}</div>`
     }
   </body>
 </html>`;
@@ -263,11 +220,12 @@ function getOverlayHtml(payload: TriggerPostureAlertPayload, displayWidth: numbe
 async function triggerPostureAlert(payload: TriggerPostureAlertPayload) {
   const mode = payload.mode === 'image' ? 'image' : 'flash';
   const displays = screen.getAllDisplays();
-  const imageSource = mode === 'image' ? await getAlertImageDataUrl(payload.imagePath) : '';
+  const imageSource = mode === 'image' ? resolveAlertImageUrl(payload.imagePath) : '';
 
-  if (mode === 'image' && !imageSource) {
-    console.warn('Image posture alert skipped because no valid alert image was found.');
-    return;
+  if (mode === 'image') {
+    console.log('image alert requested');
+    console.log('selected imagePath:', payload.imagePath ?? '');
+    console.log('resolved image url:', imageSource || '(placeholder)');
   }
 
   if (mode === 'flash') {
@@ -311,6 +269,11 @@ async function triggerPostureAlert(payload: TriggerPostureAlertPayload) {
       const overlayWindow = await createOverlayWindow(display.bounds, true);
       const html = getOverlayHtml({ mode, imagePath: payload.imagePath }, display.bounds.width, imageSource);
 
+      overlayWindow.webContents.on('console-message', (_event, _level, message) => {
+        if (message === 'image load success' || message === 'image load failed') {
+          console.log(message);
+        }
+      });
       await overlayWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
       overlayWindow.showInactive();
       raiseOverlayWindow(overlayWindow);
@@ -325,7 +288,7 @@ async function triggerPostureAlert(payload: TriggerPostureAlertPayload) {
         overlayWindow.close();
       }
     }
-  }, 3750);
+  }, 3250);
 }
 
 function createWindow() {
