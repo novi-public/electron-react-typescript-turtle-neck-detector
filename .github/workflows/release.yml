@@ -48,6 +48,7 @@ jobs:
           name: turtle-neck-detector-${{ matrix.os }}
           path: |
             dist/*.dmg
+            dist/*.zip
             dist/*.exe
             dist/*.yml
             dist/*.blockmap
@@ -78,6 +79,7 @@ jobs:
           name: Turtle Neck Detector v${{ steps.version.outputs.version }}
           files: |
             release-artifacts/**/*.dmg
+            release-artifacts/**/*.zip
             release-artifacts/**/*.exe
             release-artifacts/**/*.yml
             release-artifacts/**/*.blockmap

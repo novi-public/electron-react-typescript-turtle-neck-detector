@@ -14,9 +14,12 @@
     "alert-images": "node scripts/generate-alert-image-manifest.mjs",
     "build:electron": "tsc -p electron/tsconfig.json && node scripts/copy-electron-assets.mjs",
     "build": "npm run alert-images && tsc && npm run build:electron && vite build",
-    "dist": "npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dmg --win --x64 --publish never",
-    "dist:mac": "npm run build && (CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dmg --publish never || CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac zip --publish never)",
-    "dist:win": "npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win --x64 --publish never",
+    "predist": "npm run build",
+    "predist:mac": "npm run build",
+    "predist:win": "npm run build",
+    "dist": "cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder",
+    "dist:mac": "cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac",
+    "dist:win": "cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win",
     "preview": "vite preview",
     "lint": "eslint . --report-unused-disable-directives --max-warnings 0"
   },
@@ -60,6 +63,7 @@
       "target": [
         "nsis"
       ],
+      "signAndEditExecutable": false,
       "artifactName": "TurtleNeckDetector-Win-${version}.${ext}"
     },
     "nsis": {
