@@ -56,6 +56,7 @@ jobs:
   publish:
     name: Create GitHub Release
     needs: release
+    if: always()
     runs-on: ubuntu-latest
 
     steps:
